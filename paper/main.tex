@@ -1,0 +1,342 @@
+\documentclass{article}
+
+% PACKAGES
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+\usepackage[margin=2cm]{geometry}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{amsmath}
+\usepackage{booktabs}
+\usepackage{eurosym}
+
+\usepackage[colorlinks=true, allcolors=black]{hyperref}
+\usepackage{balance}
+
+% INFORMATIONS
+\title{Post-Activation Control of an Industrial Demand Response Event: M\'ediane 10J Baseline Reconstruction and Compliance Settlement}
+\author{Aurelian Andrei Panait}
+\date{April 2026}
+
+\begin{document}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% TITLEPAGE
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{titlepage}
+    \centering
+
+    % LOGO MINES PSL
+
+    \vspace*{1cm}
+
+    {\Huge \textbf{Post-Activation Control of an Industrial Demand Response Event} \par}
+    \vspace{0.5cm}
+    {\Large \textbf{M\'ediane 10J Baseline Reconstruction and Compliance Settlement for a 200~MW Industrial Site} \par}
+
+    \vspace{1.5cm}
+
+    {\Large \textbf{Author:}} \\
+    {\Large Aurelian Andrei Panait \par}
+
+    \vspace{1cm}
+    {\Large April 2026 \par}
+
+    \vfill
+
+    {\Large \textbf{Context}}\\[0.2cm]
+    {\Large Case study on post-activation compliance}\\
+    {\Large for a French industrial demand response event}\\
+
+    \vfill
+
+\end{titlepage}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% ABSTRACT & TOC
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\clearpage
+
+\begin{abstract}
+\large
+Demand response aggregators selling downward flexibility to the French transmission system operator (RTE) must perform an ex-post audit of each activation in order to settle remuneration and penalties. We reproduce the full \textit{contr\^ole du r\'ealis\'e} chain for a single event on 24~January~2024: a 50~MW curtailment setpoint applied between 09:00 and 11:00 on an industrial client with a nominal draw of $\sim$200~MW. The counterfactual baseline is reconstructed with RTE's \textit{M\'ediane 10J} method over 10~business reference days (10--23~January~2024), the curtailed volume is computed at a 10-minute resolution across 12~timesteps, and the compliance status is evaluated against an 80\% realisation threshold. The client delivered 96.33~MWh out of an expected 100~MWh (96.3\% realisation), earning 33{,}715.88~\euro{} in remuneration with no penalty. A per-timestep decomposition reveals an asymmetric response: slight under-delivery in the first hour is offset by over-delivery in the second hour, consistent with the ramping dynamics of industrial loads. The methodology is directly portable to portfolio-level audits, where correlated non-compliance and baseline-gaming behaviour become the operationally interesting questions.
+\end{abstract}
+
+\clearpage
+\tableofcontents
+\clearpage
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% MAIN CONTENT (two-column from here)
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\twocolumn
+
+%==========================================================
+\section{Introduction}
+%==========================================================
+
+Demand response (DR) is one of the few flexibility levers that can be mobilised on a French industrial portfolio without building new generation. Under RTE's rules, an aggregator can declare a curtailment capacity for a pool of industrial sites, be called upon during stress events, and must then prove---after the fact---that the curtailment actually occurred. That ex-post audit, commonly called the \textit{contr\^ole du r\'ealis\'e}, is the object of this paper.
+
+The difficulty of post-activation control is that the aggregator is measuring something that did not happen: the consumption that the site \textit{would have drawn} in the absence of the activation signal. This counterfactual is estimated through a regulated baseline method. Several baselines coexist in European markets (sliding averages, high-of-N-days, regression-based); in France, the reference method for programmable industrial loads is the \textit{M\'ediane 10J} rule, which aggregates the 10 most recent business days prior to the activation and takes the per-slot median. Once the baseline is available, the delivered volume is the integral of the gap between baseline and actual consumption over the activation window, and a binary compliance test against an 80\% realisation threshold determines whether a penalty is triggered.
+
+This paper reproduces the full chain on a single activation: the event of 24~January~2024 on Client~A, an industrial consumer with a nominal draw of $\sim$200~MW subject to a 50~MW curtailment request between 09:00 and 11:00. The event is typical rather than exceptional, which is precisely why it is useful as a methodological sanity-check: the client is compliant, the remuneration is positive, and the activation profile is clean. We pay particular attention to the intra-window asymmetry of the client's response, to the robustness of the \textit{M\'ediane 10J} baseline on a calm reference window, and to the portfolio-level extensions that would become relevant when scaling from a single event to many correlated sites.
+
+%==========================================================
+\section{Methodology}
+%==========================================================
+
+\subsection{Data}
+\label{sec:data}
+
+The dataset comprises two files provided for the delivery event. The metering file \texttt{Consommation\_Client\_Janvier2024.csv} contains the active power draw of Client~A at a 10-minute resolution for the whole of January~2024 (4{,}464 records, expressed in kW). The parameter file \texttt{Parametres.csv} encodes the contractual terms of the activation, summarised in Table~\ref{tab:params}. Both files follow the French convention (\texttt{;} as delimiter, \texttt{DD/MM/YYYY} dates); the ingestion pipeline enforces these explicitly via \texttt{pd.read\_csv(sep=";", dayfirst=True)} to avoid the silent month/day inversions typical when mixing French and Anglo-Saxon data sources.
+
+\begin{table}[H]
+\centering
+\begin{tabular}{@{}lr@{}}
+\toprule
+Parameter & Value \\ \midrule
+Client                          & Client~A \\
+Activation start                & 24/01/2024 09:00 \\
+Activation end                  & 24/01/2024 11:00 \\
+Setpoint ($P_{\text{set}}$)     & 50~MW \\
+Timestep granularity            & 10~min \\
+Number of timesteps             & 12 \\
+Expected curtailed volume       & 100.00~MWh \\
+Offer price                     & 350~\euro/MWh \\
+Penalty price                   & 250~\euro/MWh \\
+Compliance threshold            & 80\% \\ \bottomrule
+\end{tabular}
+\caption{Contractual parameters of the 24/01/2024 activation on Client~A.}
+\label{tab:params}
+\end{table}
+
+The client's nominal operating level is approximately 200~MW during production hours and $\sim$160~MW at night, with a morning ramp-up starting around 05:00 and an evening descent around 19:00 reflecting an industrial production shift. The 50~MW setpoint therefore corresponds to a 25\% curtailment of the daytime load.
+
+\subsection{Baseline and cost model}
+\label{sec:model}
+
+For the activation day $d^\star = $ 24/01/2024, the baseline $R(\tau)$ at intra-day slot $\tau \in \{00{:}00, 00{:}10, \dots, 23{:}50\}$ is defined by the \textit{M\'ediane 10J} rule as
+\begin{equation}
+R(\tau) = \mathrm{median}\!\left\{\, P_d(\tau) \,\big|\, d \in \mathcal{D}_{\text{ref}} \,\right\},
+\label{eq:mediane}
+\end{equation}
+where $P_d(\tau)$ is the measured power at slot $\tau$ on reference day $d$, and $\mathcal{D}_{\text{ref}}$ is the set of the 10 most recent business days prior to $d^\star$, excluding weekends and public holidays. For the 24/01/2024 event, this selection returns
+\[
+\mathcal{D}_{\text{ref}} = \{10, 11, 12, 15, 16, 17, 18, 19, 22, 23\}~\text{Jan 2024},
+\]
+with 1~January explicitly removed as a public holiday.
+
+The curtailed power at timestep $t$ in the activation window is
+\begin{equation}
+C(t) = \max\!\bigl(\,R(t) - A(t),\; 0\bigr),
+\label{eq:curtailed}
+\end{equation}
+where $A(t)$ is the measured (actual) power during the activation. The non-negativity floor guards against timesteps where the client ramped up rather than down. The curtailed energy per timestep of duration $\Delta t = 1/6$~h is $E_C(t) = C(t)\,\Delta t$, and the total delivered volume over the window is
+\begin{equation}
+E_C^{\text{tot}} = \sum_{t \in [09{:}00,\,11{:}00)} C(t)\,\Delta t.
+\label{eq:total}
+\end{equation}
+
+The realisation rate is the ratio of delivered to expected volume,
+\begin{equation}
+\rho = \frac{E_C^{\text{tot}}}{E_C^{\text{exp}}},
+\qquad E_C^{\text{exp}} = P_{\text{set}}\cdot T_{\text{act}} = 100~\text{MWh}.
+\label{eq:rho}
+\end{equation}
+
+The financial settlement follows the piecewise rule
+\begin{align}
+\text{Remuneration} &= E_C^{\text{tot}} \cdot \pi_{\text{offer}}, \label{eq:remun}\\
+\text{Penalty} &=
+  \begin{cases}
+    0.35 \cdot \bigl(E_C^{\text{exp}} - E_C^{\text{tot}}\bigr) \cdot \pi_{\text{pen}}
+      & \text{if } \rho < 80\%,\\[0.2em]
+    0 & \text{otherwise},
+  \end{cases} \label{eq:pen}\\
+\text{Net} &= \text{Remuneration} - \text{Penalty}, \label{eq:net}
+\end{align}
+with $\pi_{\text{offer}} = 350$~\euro/MWh and $\pi_{\text{pen}} = 250$~\euro/MWh.
+
+\subsection{Compliance definition}
+
+The activation is declared compliant if $\rho \geq 80\%$. Above this threshold, the operator receives the full remuneration on the delivered volume with no penalty; below it, a penalty proportional to the deficit volume is applied at the reduced rate $\pi_{\text{pen}}$. The 80\% threshold creates a sharp discontinuity in the payoff function which becomes operationally relevant at portfolio level (see Section~\ref{sec:discussion}).
+
+The median is preferred to the mean in Equation~\eqref{eq:mediane} for a specific operational reason: a single atypical day in $\mathcal{D}_{\text{ref}}$---an unplanned shutdown, a maintenance window, a metering glitch---would drag a mean-based baseline away from the client's true operating point, mechanically understating the curtailed volume and penalising the client. The median absorbs up to four such outliers out of 10 without moving.
+
+%==========================================================
+\section{Results}
+%==========================================================
+
+\subsection{Full-day response profile}
+\label{sec:fullday}
+
+Figure~\ref{fig:fullday} places the activation in its daily context. The client's consumption ramps up from $\sim$160~MW overnight to $\sim$200~MW by 08:30, drops sharply to 150~MW at 09:00 on the activation edge, stays in a $[150, 155]$~MW corridor for the two hours of the window, and recovers to $\sim$200~MW within a single timestep after 11:00. Two features are worth noting: the recovery is clean (no post-activation overshoot, which would otherwise have generated an imbalance cost on the portfolio side), and the evening descent at 19:00 is unrelated to the activation and reflects the end of an industrial production shift.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\linewidth]{plot2_client_consumption.png}
+    \caption{Client~A consumption over the full day of 24/01/2024. The activation window 09:00--11:00 is shaded. The sharp drop at 09:00 and the symmetric recovery at 11:00 are consistent with a programmable industrial load responding to a dispatch signal.}
+    \label{fig:fullday}
+\end{figure}
+
+\subsection{Activation window: baseline, actual, setpoint}
+\label{sec:window}
+
+Figure~\ref{fig:control} overlays the three curves that matter for the \textit{contr\^ole du r\'ealis\'e}: the \textit{M\'ediane 10J} baseline $R(t)$ in blue, the actual consumption $A(t)$ in red, and the target consumption level $R(t) - P_{\text{set}}$ in green dashed. The shaded band between blue and red is the curtailed volume of Equation~\eqref{eq:total}.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\linewidth]{plot1_demand_response.png}
+    \caption{Post-activation control view: baseline $R(t)$ (blue), actual $A(t)$ (red), target level $R(t)-50$~MW (green dashed), curtailed volume (shaded). The baseline is flat at $\sim$200~MW over the two-hour window, confirming the operational stability of the reference days.}
+    \label{fig:control}
+\end{figure}
+
+Three observations follow. First, the baseline is remarkably flat, within a $\pm 1$~MW band around 200~MW, which indicates that the \textit{M\'ediane 10J} aggregation absorbed the day-to-day noise effectively and that the ten reference days were genuinely "normal" operating days. Second, the actual consumption sits just above the target in the first hour and drops to the target in the second hour, a pattern treated in detail in Section~\ref{sec:pertimestep}. Third, the gap between actual and target is small relative to the gap between actual and baseline, which means the client is \textit{close} to compliance rather than struggling with it.
+
+\subsection{Per-timestep decomposition}
+\label{sec:pertimestep}
+
+Figure~\ref{fig:barplot} disaggregates the curtailed volume into the 12 timesteps of the activation window. Red bars denote under-delivery relative to the 50~MW setpoint; green bars denote timesteps at or above setpoint.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\linewidth]{plot3_curtailed_volume.png}
+    \caption{Curtailed power per 10-minute timestep. Red bars indicate under-delivery relative to the 50~MW setpoint; green bars indicate timesteps at or above setpoint. Under-delivery is concentrated in the first hour; the second hour is compliant on a timestep-by-timestep basis.}
+    \label{fig:barplot}
+\end{figure}
+
+The pattern is systematic rather than random: the first eight timesteps (09:00--10:10) are all red, with curtailed power between 45.3 and 49.9~MW; the last four timesteps (10:20--10:50) are green, reaching or exceeding the 50~MW setpoint. The transition at 10:20 is sharp: from 45.3~MW at 10:10 to 49.8~MW at 10:20. This asymmetry is consistent with the ramping dynamics of industrial processes (see Section~\ref{sec:discussion}) and is the reason settlement rules average realisation over the full window rather than enforcing a per-timestep minimum.
+
+\subsection{Compliance indicators and financial settlement}
+\label{sec:indicators}
+
+Table~\ref{tab:kpis} consolidates the operational indicators. The realisation rate of 96.3\% comfortably exceeds the 80\% threshold, so the activation is declared compliant and no penalty is triggered.
+
+\begin{table}[H]
+\centering
+\begin{tabular}{@{}lr@{}}
+\toprule
+Indicator & Value \\ \midrule
+Activation period                                        & 09:00--11:00 \\
+Number of timesteps                                      & 12 \\
+Setpoint ($P_{\text{set}}$)                              & 50~MW \\
+Expected volume ($E_C^{\text{exp}}$)                     & 100.00~MWh \\
+Delivered volume ($E_C^{\text{tot}}$)                    & 96.33~MWh \\
+Realisation rate ($\rho$)                                & 96.3\% \\
+Compliance threshold                                     & 80\% \\ \midrule
+\textbf{Compliance status}                               & \textbf{COMPLIANT} \\ \bottomrule
+\end{tabular}
+\caption{Operational performance indicators for the 24/01/2024 activation.}
+\label{tab:kpis}
+\end{table}
+
+Applying Equations~\eqref{eq:remun}--\eqref{eq:net}, the financial settlement closes as in Table~\ref{tab:financials}. The penalty line is zero by construction since $\rho = 96.3\% > 80\%$ falls in the compliant branch of Equation~\eqref{eq:pen}.
+
+\begin{table}[H]
+\centering
+\begin{tabular}{@{}lr@{}}
+\toprule
+Item & Amount \\ \midrule
+Offer price                        & 350~\euro/MWh \\
+Penalty price                      & 250~\euro/MWh \\
+Remuneration ($96.33 \times 350$)  & 33{,}715.88~\euro \\
+Penalty                            & 0.00~\euro \\ \midrule
+\textbf{Net payment}               & \textbf{33{,}715.88~\euro} \\ \bottomrule
+\end{tabular}
+\caption{Financial settlement of the activation.}
+\label{tab:financials}
+\end{table}
+
+As a counterfactual check, had the realisation rate dropped to 70\%, the deficit volume would have been 30~MWh and the penalty $0.35 \cdot 30 \cdot 250 = 2{,}625$~\euro{}, against a reduced remuneration of $70 \cdot 350 = 24{,}500$~\euro{}, for a net payment of 21{,}875~\euro{}. The compliance threshold therefore introduces a sharp non-linearity that becomes structurally relevant at portfolio level.
+
+%==========================================================
+\section{Discussion}
+\label{sec:discussion}
+%==========================================================
+
+\subsection{Intra-window dynamics and ramping}
+
+The first-hour under-delivery followed by second-hour over-delivery visible in Figure~\ref{fig:barplot} is not random noise around the setpoint: it is a ramping signature. Industrial loads that participate in DR are typically thermal processes, electrolysis cells, or compressors whose output cannot be adjusted instantaneously. A 50~MW curtailment on a 200~MW site is a 25\% reduction---enough to require coordination of multiple unit operations, which takes tens of minutes. The transition at 10:20 from red to green bars in Figure~\ref{fig:barplot} is consistent with the physical time it takes for the client to fully settle into the reduced operating point.
+
+The integration over the full window is therefore a feature of the settlement rule, not a leniency: it matches the physical reality of industrial flexibility. A settlement mechanism enforcing a per-timestep minimum would systematically penalise compliant clients for the first 30--40 minutes of every activation, creating a disincentive to participate in the mechanism.
+
+\subsection{Baseline robustness and known weaknesses}
+
+The flatness of $R(t)$ in Figure~\ref{fig:control} is a coincidence of the January baseline (cold months tend to produce stable industrial consumption patterns) and a small confirmation that the 10 reference days of $\mathcal{D}_{\text{ref}}$ were genuinely normal operating days. It is worth flagging, however, that the \textit{M\'ediane 10J} method has a known structural weakness: if $\mathcal{D}_{\text{ref}}$ happens to include days on which the same client was curtailed---for example, if the client is routinely activated at 09:00 on Wednesdays---the baseline at 09:00 would be depressed by the earlier curtailments, and the present activation would appear smaller than it is.
+
+The business-day selection avoids this in the present case (no prior activations on the 10 reference days), but the methodology does not structurally protect against it. An operational baseline implementation should add a check for prior activations inside the reference window and, if any are present, either replace the affected days or apply a back-correction. This becomes an active concern for clients with recurring activations rather than isolated events.
+
+\subsection{Limitations and portfolio extension}
+
+Three limitations temper the interpretation of the single-event result. First, the counterfactual carries an uncertainty that is not reflected in the single-number volume: a confidence band on $R(t)$ (e.g. the inter-quartile range across the 10 reference days) would give a more honest curtailed-volume estimate, at the cost of a more complex settlement rule. The present framework returns a point estimate with no associated error bar.
+
+Second, aggregating a portfolio of clients with correlated activations changes the risk profile in a way not visible from a single event. The penalty in Equation~\eqref{eq:pen} is convex below the 80\% threshold: a portfolio-level realisation rate of 80\% can hide a few fully compliant clients and one severely non-compliant site with sharply worse economics than the headline suggests. Portfolio-level audits should therefore report the realisation distribution, not only its mean.
+
+Third, the baseline method interacts with the client's own scheduling behaviour. A client who learns that the baseline is used for settlement has an incentive to inflate consumption on potential reference days, an effect known in the literature as \textit{rebound gaming} or \textit{baseline inflation}. This analysis covers a single activation and cannot detect such patterns; a multi-event analysis over several months would be required to flag systematic deviations between reference-day consumption and non-reference-day consumption for the same client.
+
+\subsection{Operational recommendations}
+
+Three actions follow from the analysis. First, the \textit{contr\^ole du r\'ealis\'e} chain reproduced here can be directly deployed on the aggregator's portfolio for routine post-activation audits: the computation is cheap and the inputs (10-minute metering, public holiday calendar, activation parameters) are already available. Second, the per-timestep decomposition should be reported alongside the aggregate realisation rate for each activation; it provides a fast diagnostic for ramping issues or for detecting clients who, unlike Client~A, never reach the setpoint at all. Third, the baseline-gaming detection discussed above should be scheduled as a periodic offline analysis rather than embedded in the settlement chain, both because it requires a longer data window and because it is a portfolio-level question rather than a per-event one.
+
+%==========================================================
+\section{Conclusion}
+%==========================================================
+
+This study performs the post-activation control of a single industrial demand response event on 24~January~2024, reproducing the full settlement chain from raw 10-minute metering data to the final invoice. The client delivered 96.33~MWh of curtailment against a 100~MWh target, for a 96.3\% realisation rate well above the 80\% compliance threshold, and earned 33{,}715.88~\euro{} in remuneration with no penalty. The per-timestep decomposition shows the expected ramping signature of an industrial load, the \textit{M\'ediane 10J} baseline proves robust on a calm reference window, and the settlement arithmetic is straightforward once the baseline is available.
+
+Beyond the single-event result, the analysis isolates the three methodological concerns that would structure a portfolio-level extension: the baseline's uncertainty band, the convexity of the penalty below the 80\% threshold, and the potential for client-side baseline gaming. None of these matter for the compliance verdict of a single typical activation, but all three become operationally decisive when the chain is deployed across many clients and many events. The computational backbone of the audit is settled; the interesting remaining work is in the portfolio-level questions.
+
+\balance
+
+\onecolumn
+\appendix
+
+%==========================================================
+\section{Nomenclature}
+\label{app:nomenclature}
+%==========================================================
+
+\subsection*{Abbreviations}
+
+\begin{tabular}{@{}lp{0.78\linewidth}@{}}
+\toprule
+Acronym & Meaning \\ \midrule
+RTE   & \textit{R\'eseau de Transport d'\'Electricit\'e} --- French Transmission System Operator \\
+TSO   & Transmission System Operator \\
+DR    & Demand Response \\
+M10J  & \textit{M\'ediane 10 Jours} --- French baseline reconstruction method, per-slot median over the 10 most recent business days \\
+MW / MWh & Megawatt (power) / Megawatt-hour (energy) \\
+CSV   & Comma-Separated Values (French convention: semicolon-separated) \\
+\textit{Contr\^ole du r\'ealis\'e} & Ex-post audit of a demand response activation \\
+\textit{Effacement} & Demand response, downward flexibility \\ \bottomrule
+\end{tabular}
+
+\vspace{0.5cm}
+
+\subsection*{Symbols}
+
+\begin{tabular}{@{}llc@{}}
+\toprule
+Symbol & Description & Unit \\ \midrule
+$t$                     & Timestep index (10-minute intervals, 12 per activation window) & ---       \\
+$\tau$                  & Intra-day slot index, $\tau \in \{00{:}00, \dots, 23{:}50\}$   & ---       \\
+$\Delta t$              & Timestep duration                                               & $1/6$~h  \\
+$d$                     & Reference day index                                             & ---       \\
+$\mathcal{D}_{\text{ref}}$ & Set of 10 business reference days prior to activation        & ---       \\
+$P_d(\tau)$             & Measured power at slot $\tau$ on reference day $d$              & MW        \\
+$R(\tau)$               & \textit{M\'ediane 10J} baseline at slot $\tau$                   & MW       \\
+$A(t)$                  & Actual measured power during the activation window              & MW        \\
+$P_{\text{set}}$        & Curtailment setpoint                                            & MW        \\
+$C(t)$                  & Curtailed power at timestep $t$, $\max(R-A, 0)$                 & MW        \\
+$E_C(t)$                & Curtailed energy at timestep $t$, $C(t) \cdot \Delta t$         & MWh       \\
+$E_C^{\text{tot}}$      & Delivered curtailed volume over the activation window           & MWh       \\
+$E_C^{\text{exp}}$      & Expected curtailed volume, $P_{\text{set}} \cdot T_{\text{act}}$ & MWh     \\
+$T_{\text{act}}$        & Activation window duration                                      & h         \\
+$\rho$                  & Realisation rate, $E_C^{\text{tot}} / E_C^{\text{exp}}$         & ---       \\
+$\pi_{\text{offer}}$    & Offer price, applied to delivered volume                        & \euro/MWh \\
+$\pi_{\text{pen}}$      & Penalty price, applied to deficit volume if $\rho < 80\%$       & \euro/MWh \\ \bottomrule
+\end{tabular}
+
+\end{document}
