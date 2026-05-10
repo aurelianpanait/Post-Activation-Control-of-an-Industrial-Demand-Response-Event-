@@ -183,7 +183,7 @@ If you reuse this work, please cite:
 If you build on this work, a link to the repo is enough. For an academic citation:
 
 ```bibtex
-@techreport{panait2026intraday,
+@techreport{panait2026postactivation,
   author = {Panait, Aurelian Andrei},
   title  = {Post-Activation Control of an Industrial Demand Response Event},
   institution = {MINES Paris -- PSL},
