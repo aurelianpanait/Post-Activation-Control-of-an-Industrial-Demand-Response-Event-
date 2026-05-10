@@ -177,6 +177,21 @@ Data files are included in this repository as they originate from a recruitment 
 If you reuse this work, please cite:
 
 > Panait, A. A. (2026). *Post-Activation Control of an Industrial Demand Response Event: Médiane 10J Baseline Reconstruction and Compliance Settlement*. Technical case study, MINES Paris–PSL.
+>
+> ## Citation
+
+If you build on this work, a link to the repo is enough. For an academic citation:
+
+```bibtex
+@techreport{panait2026intraday,
+  author = {Panait, Aurelian Andrei},
+  title  = {Intraday vs Imbalance Arbitrage on the Romanian Power Market},
+  institution = {MINES Paris -- PSL},
+  year   = {2026},
+  type   = {Technical case study},
+  url    = {https://github.com/aurelianpanait/Post-Activation-Control-of-an-Industrial-Demand-Response-Event-}
+}
+```
 
 ---
 
