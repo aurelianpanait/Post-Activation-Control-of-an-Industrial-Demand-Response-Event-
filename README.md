@@ -185,7 +185,7 @@ If you build on this work, a link to the repo is enough. For an academic citatio
 ```bibtex
 @techreport{panait2026intraday,
   author = {Panait, Aurelian Andrei},
-  title  = {Intraday vs Imbalance Arbitrage on the Romanian Power Market},
+  title  = {Post-Activation Control of an Industrial Demand Response Event},
   institution = {MINES Paris -- PSL},
   year   = {2026},
   type   = {Technical case study},
